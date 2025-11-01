@@ -162,19 +162,30 @@ app.post("/api/auth/signup", async (req, res) => {
 
 app.post("/api/auth/login", async (req, res) => {
   try {
-    const { email, password } = req.body
+    const { email, password } = req.body || {}
 
-    let users = (await pool.query("SELECT * FROM users WHERE email = $1", [email])).rows
-    if (!Array.isArray(users) && users && users.rows) {
-      // some clients return { rows }
-      users = users.rows
+    if (!email || !password) {
+      return res.status(400).json({ message: 'email and password required' })
     }
+
+    // lookup user by email
+    const queryResult = await pool.query(
+      "SELECT id, username, email, password FROM users WHERE email = $1",
+      [email],
+    )
+    const users = queryResult.rows || []
+    console.log(`[login] lookup for email=${email} found ${users.length} user(s)`)
+
     if (users.length === 0) {
+      // don't reveal whether email exists
       return res.status(401).json({ message: "Invalid credentials" })
     }
 
     const user = users[0]
+
+    // verify password
     const isValidPassword = await bcrypt.compare(password, user.password)
+    console.log(`[login] bcrypt.compare result for userId=${user.id}: ${isValidPassword ? 'OK' : 'FAIL'}`)
 
     if (!isValidPassword) {
       return res.status(401).json({ message: "Invalid credentials" })
@@ -182,11 +193,9 @@ app.post("/api/auth/login", async (req, res) => {
 
     const token = jwt.sign({ id: user.id, username: user.username }, process.env.JWT_SECRET)
 
-    res.json({
-      token,
-      user: { id: user.id, username: user.username, email: user.email },
-    })
+    res.json({ token, user: { id: user.id, username: user.username, email: user.email } })
   } catch (error) {
+    console.error('[login] error', error && error.stack ? error.stack : error)
     res.status(500).json({ message: error.message })
   }
 })
