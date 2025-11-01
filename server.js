@@ -139,7 +139,7 @@ app.post("/api/auth/signup", async (req, res) => {
     // Insert new user
     console.log('[signup] Inserting new user into DB')
     try {
-      let result = await sql.query(
+      let result = await pool.query(
         'INSERT INTO users (username, email, password) VALUES ($1, $2, $3) RETURNING id, username, email, created_at',
         [username, email, hashedPassword],
       )
@@ -195,11 +195,11 @@ app.post("/api/auth/login", async (req, res) => {
 app.get("/api/users/search", verifyToken, async (req, res) => {
   try {
     const { query } = req.query
-    let users = await sql.query(
+    const result = await pool.query(
       "SELECT id, username, email FROM users WHERE username ILIKE $1 OR email ILIKE $1 LIMIT 10",
-      [`%${query}%`],
+      [`%${query}%`]
     )
-    if (!Array.isArray(users) && users && users.rows) users = users.rows
+    const users = result.rows
     res.json(users)
   } catch (error) {
     res.status(500).json({ message: error.message })
@@ -216,11 +216,11 @@ app.get("/api/users/search-open", async (req, res) => {
   try {
     const { query } = req.query
     if (!query) return res.json([])
-    let users = await sql.query(
+    const result = await pool.query(
       "SELECT id, username, email FROM users WHERE username ILIKE $1 OR email ILIKE $1 LIMIT 20",
-      [`%${query}%`],
+      [`%${query}%`]
     )
-    if (!Array.isArray(users) && users && users.rows) users = users.rows
+    const users = result.rows
     res.json(users)
   } catch (error) {
     console.error('[search-open] Error:', error && error.stack ? error.stack : error)
@@ -291,8 +291,8 @@ io.on("connection", (socket) => {
   // Join the socket to all existing conversation rooms for this user so they receive messages
   ;(async () => {
     try {
-      let convs = await sql.query(`SELECT id FROM conversations WHERE user1_id = $1 OR user2_id = $1`, [socket.userId])
-      if (!Array.isArray(convs) && convs && convs.rows) convs = convs.rows
+      const result = await pool.query(`SELECT id FROM conversations WHERE user1_id = $1 OR user2_id = $1`, [socket.userId])
+      const convs = result.rows
       if (Array.isArray(convs)) {
         for (const c of convs) {
           try {
@@ -310,7 +310,7 @@ io.on("connection", (socket) => {
   // Get user conversations
   socket.on("get_conversations", async (callback) => {
     try {
-      let conversations = await sql.query(
+      let conversations = await pool.query(
         `SELECT c.id, u.id as participant_id, u.username as participantName, u.email as participantEmail, m.content as lastMessage, m.created_at as lastMessageAt
          FROM conversations c 
          JOIN users u ON (CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END) = u.id
@@ -340,7 +340,7 @@ io.on("connection", (socket) => {
       const { userId } = data
       const conversationId = `${Math.min(socket.userId, userId)}_${Math.max(socket.userId, userId)}`
 
-      await sql.query(`INSERT INTO conversations (id, user1_id, user2_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [
+      await pool.query(`INSERT INTO conversations (id, user1_id, user2_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`, [
         conversationId,
         Math.min(socket.userId, userId),
         Math.max(socket.userId, userId),
@@ -373,7 +373,7 @@ io.on("connection", (socket) => {
 
       // Emit updated conversation lists to both users (creator and recipient)
       try {
-        let convsForCreator = await sql.query(
+        let convsForCreator = await pool.query(
           `SELECT c.id, u.id as participant_id, u.username as participantName, u.email as participantEmail, m.content as lastMessage, m.created_at as lastMessageAt
            FROM conversations c 
            JOIN users u ON (CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END) = u.id
@@ -392,7 +392,7 @@ io.on("connection", (socket) => {
         }))
         io.to(`user_${socket.userId}`).emit('conversation_list', convsForCreator || [])
 
-        let convsForRecipient = await sql.query(
+        let convsForRecipient = await pool.query(
           `SELECT c.id, u.id as participant_id, u.username as participantName, u.email as participantEmail, m.content as lastMessage, m.created_at as lastMessageAt
            FROM conversations c 
            JOIN users u ON (CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END) = u.id
@@ -427,7 +427,7 @@ io.on("connection", (socket) => {
       let messages
       if (before) {
         // load messages older than `before` (cursor pagination) - return oldest->newest
-        messages = await sql.query(
+        messages = await pool.query(
           `SELECT * FROM messages WHERE conversation_id = $1 AND created_at < $2 ORDER BY created_at DESC LIMIT $3`,
           [conversationId, before, pageSize],
         )
@@ -437,7 +437,7 @@ io.on("connection", (socket) => {
         callback(messages)
       } else {
         // initial load: get latest `pageSize` messages
-        messages = await sql.query(
+        messages = await pool.query(
           `SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at DESC LIMIT $2`,
           [conversationId, pageSize],
         )
@@ -456,7 +456,7 @@ io.on("connection", (socket) => {
     try {
       const { conversationId, content, type, fileName } = data
 
-      let result = await sql.query(
+      let result = await pool.query(
         `INSERT INTO messages (conversation_id, sender_id, content, type, file_name, created_at) 
          VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *`,
         [conversationId, socket.userId, content, type, fileName || null],
@@ -505,7 +505,7 @@ io.on("connection", (socket) => {
   // Call events
   socket.on("initiate_call", async (data) => {
     const { conversationId } = data
-    let otherUser = await sql.query(`SELECT user1_id, user2_id FROM conversations WHERE id = $1`, [conversationId])
+    let otherUser = await pool.query(`SELECT user1_id, user2_id FROM conversations WHERE id = $1`, [conversationId])
     if (!Array.isArray(otherUser) && otherUser && otherUser.rows) otherUser = otherUser.rows
 
     if (!otherUser || otherUser.length === 0) {
