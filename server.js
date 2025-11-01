@@ -25,12 +25,12 @@ const pool = new Pool({
 const app = express()
 const server = http.createServer(app)
 const io = socketIo(server, {
-  cors: { origin: process.env.FRONTEND_URL || "http://localhost:3000" },
+  cors: { origin: process.env.FRONTEND_URL || "https://chat-eta-liard-14.vercel.app" },
 })
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:3000",
+  origin: process.env.FRONTEND_URL || "https://chat-eta-liard-14.vercel.app",
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
