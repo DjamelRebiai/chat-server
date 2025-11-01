@@ -7,9 +7,17 @@ const bcrypt = require("bcryptjs")
 const multer = require("multer")
 const cloudinary = require("cloudinary").v2
 const dotenv = require("dotenv")
-const { neon } = require("@neondatabase/serverless")
+const { neonConfig, Pool } = require('@neondatabase/serverless')
 
 dotenv.config()
+
+// Configure Neon
+neonConfig.fetchConnectionCache = true
+
+// Create connection pool
+const pool = new Pool({
+  connectionString: process.env.NEON_DATABASE_URL
+})
 
 const app = express()
 const server = http.createServer(app)
@@ -49,30 +57,15 @@ cloudinary.config({
 
 // Database
 // Support either NEON_DATABASE_URL or DATABASE_URL for flexibility.
-const dbUrl = process.env.NEON_DATABASE_URL || process.env.DATABASE_URL
-if (!dbUrl) {
-  console.error('[startup] No database URL provided. Set NEON_DATABASE_URL or DATABASE_URL in your .env')
-  // Do not crash when running in some environments automatically, but log loudly.
-  // Optionally you can uncomment the next line to make the server exit on missing DB URL.
-  // process.exit(1)
-}
-console.log('[startup] Using DB URL:', dbUrl ? '[provided]' : '[missing]')
-let sql
-try {
-  sql = neon(dbUrl)
-  console.log('[startup] DB client initialized')
-  ;(async () => {
-    try {
-      // quick connectivity check
-  const res = await sql.query('SELECT 1')
-      console.log('[startup] DB connectivity test OK')
-    } catch (e) {
-      console.warn('[startup] DB connectivity test failed:', e && e.message ? e.message : e)
-    }
-  })()
-} catch (e) {
-  console.error('[startup] Failed to initialize DB client:', e && e.stack ? e.stack : e)
-}
+// Test database connection
+;(async () => {
+  try {
+    const res = await pool.query('SELECT 1')
+    console.log('[startup] DB connectivity test OK')
+  } catch (e) {
+    console.warn('[startup] DB connectivity test failed:', e && e.message ? e.message : e)
+  }
+})()
 
 // Multer config for file uploads
 const upload = multer({ storage: multer.memoryStorage() })
