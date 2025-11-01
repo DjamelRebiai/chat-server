@@ -7,11 +7,14 @@ const bcrypt = require("bcryptjs")
 const multer = require("multer")
 const cloudinary = require("cloudinary").v2
 const dotenv = require("dotenv")
-const { neonConfig, Pool } = require('@neondatabase/serverless')
+const { Pool } = require('pg')
+const { WebSocket } = require('ws')
+const { neonConfig } = require('@neondatabase/serverless')
 
 dotenv.config()
 
-// Configure Neon
+// Configure Neon to use native WebSocket
+neonConfig.webSocketConstructor = WebSocket
 neonConfig.fetchConnectionCache = true
 
 // Create connection pool
@@ -116,7 +119,7 @@ app.post("/api/auth/signup", async (req, res) => {
     // Check for existing user
     console.log('[signup] Checking for existing user by email or username')
     try {
-      let existing = await sql.query('SELECT id, username, email FROM users WHERE email = $1 OR username = $2', [email, username])
+      let existing = await pool.query('SELECT id, username, email FROM users WHERE email = $1 OR username = $2', [email, username])
       if (!Array.isArray(existing) && existing && existing.rows) existing = existing.rows
       console.log('[signup] Existing user query result length:', Array.isArray(existing) ? existing.length : 'unknown')
       if (existing && existing.length > 0) {
@@ -161,7 +164,7 @@ app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body
 
-    let users = await sql.query("SELECT * FROM users WHERE email = $1", [email])
+    let users = (await pool.query("SELECT * FROM users WHERE email = $1", [email])).rows
     if (!Array.isArray(users) && users && users.rows) {
       // some clients return { rows }
       users = users.rows
